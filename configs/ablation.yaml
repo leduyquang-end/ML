@@ -1,0 +1,19 @@
+defaults: default.yaml
+
+experiments:
+  - name: baseline_soft
+    fusion.kind: soft
+    routing.kind: rule
+
+  - name: hard_fusion
+    fusion.kind: hard
+
+  - name: stacking_fusion
+    fusion.kind: stacking
+
+  - name: learned_router
+    routing.kind: learned
+
+  - name: lane_a_only
+    fusion.kind: hard
+    routing.kind: rule

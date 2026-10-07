@@ -1,0 +1,19 @@
+[importlinter]
+root_package = fakenews
+
+[importlinter:contract:layers]
+name = Layers contract (shared -> modules -> app)
+type = layers
+layers =
+    fakenews.app
+    fakenews.modules
+    fakenews.shared
+
+[importlinter:contract:module_isolation]
+name = Modules do not import each other's internals
+type = forbidden
+source_modules =
+    fakenews.modules
+forbidden_modules =
+    fakenews.modules.*._internal
+allow_indirect_imports = true

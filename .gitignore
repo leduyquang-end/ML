@@ -1,0 +1,32 @@
+# data & artifacts (sinh ra, không commit)
+data/raw/*
+data/processed/*
+data/embeddings/*
+artifacts/models/*
+artifacts/reports/*
+!data/**/.gitkeep
+!artifacts/**/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/
+
+#模型 / cache
+*.npy
+*.joblib
+*.pt
+*.bin
+
+# Reports sinh ra (giữ .gitkeep)
+reports/*
+!reports/.gitkeep
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
