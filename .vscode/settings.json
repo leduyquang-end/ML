@@ -1,0 +1,14 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+  "python.terminal.activateEnvironment": true,
+  "python.analysis.extraPaths": ["${workspaceFolder}/.venv/Lib/site-packages"],
+  "terminal.integrated.cwd": "${workspaceFolder}",
+  "terminal.integrated.env.windows": {
+    "PIP_CACHE_DIR": "${workspaceFolder}/.cache/pip",
+    "TEMP": "${workspaceFolder}/.cache/tmp",
+    "TMP": "${workspaceFolder}/.cache/tmp",
+    "HF_HOME": "${workspaceFolder}/.cache/huggingface",
+    "HF_HUB_CACHE": "${workspaceFolder}/.cache/huggingface/hub",
+    "TORCH_HOME": "${workspaceFolder}/.cache/torch"
+  }
+}

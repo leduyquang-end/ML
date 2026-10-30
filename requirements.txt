@@ -1,0 +1,5 @@
+numpy>=1.26,<3
+scikit-learn>=1.4,<2
+torch>=2.6,<3
+transformers>=4.40,<5
+pyvi>=0.1.1,<0.2

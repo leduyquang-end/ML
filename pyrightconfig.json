@@ -1,0 +1,7 @@
+{
+  "include": ["phobert_features.py", "phobert_pipeline", "test_phobert_features.py"],
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.13",
+  "typeCheckingMode": "basic"
+}

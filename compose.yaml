@@ -1,0 +1,9 @@
+services:
+  phobert:
+    build: .
+    image: phobert-features:local
+    # Đường dẫn tương đối trỏ về dự án trên ổ E khi chạy từ thư mục này.
+    volumes:
+      - ./data:/app/data:ro
+      - ./outputs:/app/outputs
+      - ./.cache:/app/.cache

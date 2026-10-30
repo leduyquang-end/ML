@@ -1,0 +1,10 @@
+.git/
+.venv/
+.vscode/
+.cache/
+outputs/
+**/__pycache__/
+**/*.pyc
+.env
+.env.*
+*.tar
