@@ -1,4 +1,12 @@
 __pycache__/
 .venv/
-outputs/
+# Chỉ chia sẻ dữ liệu đã xuất; trọng số encoder và đầu ra khác vẫn được bỏ qua.
+outputs/*
+!outputs/chunks.csv
+!outputs/phobert/
+outputs/phobert/*
+!outputs/phobert/articles.csv
+!outputs/phobert/embeddings.csv
+!outputs/phobert/features.npz
+!outputs/phobert/metadata.json
 .cache/

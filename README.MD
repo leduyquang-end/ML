@@ -31,7 +31,7 @@ phobert_pipeline/
     pipeline.py               # Điều phối các bước trích đặc trưng
     export_chunks.py          # Xuất dữ liệu sau chunk thành CSV
     outputs.py                # Lưu vector, nhãn, split và encoder
-outputs/                      # Dữ liệu sinh ra khi chạy, không đưa lên Git
+outputs/                      # Kết quả mẫu CSV/NPZ/metadata đã đưa lên Git
 .cache/                       # Cache mô hình và file tạm, không đưa lên Git
 run.ps1                       # Chạy trên Windows bằng .venv của dự án
 Dockerfile / compose.yaml     # Môi trường chạy CPU để chia sẻ
@@ -104,16 +104,20 @@ trọng số không loại trùng chính xác từng vector token và phép gộ
 
 | File | Nội dung | Kết quả hiện tại |
 | --- | --- | --- |
-| `outputs/phobert/articles.csv` | Văn bản đã làm sạch/bỏ trùng, chưa tách từ/chunk; gồm ID và nhãn gốc | 225 bài |
-| `outputs/chunks.csv` | Mỗi dòng là một chunk trước encoder: ID bài, split, nhãn, ID chunk, vị trí token, văn bản tách từ và `input_ids` dạng JSON | 621 chunk |
-| `outputs/phobert/embeddings.csv` | Mỗi dòng là vector bài sau PhoBERT và gộp chunk; gồm ID, split, nhãn, số chunk, `feature_0`…`feature_767` | 225 × 768 đặc trưng |
-| `outputs/phobert/features.npz` | Cùng vector/nhãn ở dạng NumPy, tách sẵn train/test | Train `(180, 768)`, test `(45, 768)` |
-| `outputs/phobert/metadata.json` | Checkpoint/revision, seed, cấu hình chunk, thống kê và ID từng split | Dùng đối chiếu, tái lập |
+| [articles.csv](outputs/phobert/articles.csv) | Văn bản đã làm sạch/bỏ trùng, chưa tách từ/chunk; gồm ID và nhãn gốc | 225 bài |
+| [chunks.csv](outputs/chunks.csv) | Mỗi dòng là một chunk trước encoder: ID bài, split, nhãn, ID chunk, vị trí token, văn bản tách từ và `input_ids` dạng JSON | 621 chunk |
+| [embeddings.csv](outputs/phobert/embeddings.csv) | Mỗi dòng là vector bài sau PhoBERT và gộp chunk; gồm ID, split, nhãn, số chunk, `feature_0`…`feature_767` | 225 × 768 đặc trưng |
+| [features.npz](outputs/phobert/features.npz) | Cùng vector/nhãn ở dạng NumPy, tách sẵn train/test | Train `(180, 768)`, test `(45, 768)` |
+| [metadata.json](outputs/phobert/metadata.json) | Checkpoint/revision, seed, cấu hình chunk, thống kê và ID từng split | Dùng đối chiếu, tái lập |
 | `outputs/phobert/encoder/` | Encoder và tokenizer được lưu lại | Dùng trích vector sau này |
 
 `chunks.csv` được tạo bằng lệnh xuất chunk riêng. Các file trong
 `outputs/phobert/` được tạo khi chạy đầy đủ. CSV dùng UTF-8 BOM để mở bằng Excel.
 `embeddings.csv` chưa qua scaler và không chứa nhãn dự đoán hay xác suất phân loại.
+
+Repo kèm sẵn năm file kết quả mẫu ở trên để xem/tải trực tiếp.
+Thư mục `encoder/` chứa trọng số lớn được tạo khi chạy, không đưa lên Git;
+cache và môi trường `.venv` cũng được bỏ qua.
 
 Đọc dữ liệu cho bước học máy tiếp theo:
 
