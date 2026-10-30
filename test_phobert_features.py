@@ -1,6 +1,8 @@
 """Kiểm tra logic dữ liệu/chunking, không cần tải PhoBERT."""
 
 import io
+import csv
+import json
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,9 +12,58 @@ from phobert_pipeline.chunking import input_limit, make_chunks
 from phobert_pipeline.preprocessing import load_articles
 from phobert_pipeline.aggregation import aggregate_chunks
 from phobert_pipeline.splitting import split_articles
+from phobert_pipeline.export_chunks import export_chunks
+from phobert_pipeline.config import configure_runtime
+from phobert_pipeline.preprocessing import segment_text
+from phobert_pipeline.outputs import save_embeddings_csv
 
 
 class DataAndChunkTests(unittest.TestCase):
+    def test_embedding_csv_preserves_vectors_labels_and_splits(self):
+        import numpy as np
+
+        articles = [{"article_id": 7, "label": 1}, {"article_id": 2, "label": 0}]
+        features = np.array([[1.25, -2.5], [0., 3.75]], dtype=np.float32)
+        buffer = io.StringIO()
+        with patch.object(Path, "open") as opener:
+            opener.return_value.__enter__.return_value = buffer
+            save_embeddings_csv(Path("embeddings.csv"), articles, features, [3, 1], [1])
+        rows = list(csv.DictReader(io.StringIO(buffer.getvalue())))
+        self.assertEqual(list(rows[0]),
+                         ["article_id", "split", "label", "chunk_count", "feature_0", "feature_1"])
+        self.assertEqual([(r["article_id"], r["split"], r["label"]) for r in rows],
+                         [("7", "test", "1"), ("2", "train", "0")])
+        np.testing.assert_array_equal(
+            [[float(r["feature_0"]), float(r["feature_1"])] for r in rows], features,
+        )
+
+    def test_segmenter_supports_vietnamese_project_path(self):
+        configure_runtime()
+        self.assertEqual(segment_text("Thủ tướng gửi lời xin lỗi."),
+                         "Thủ_tướng gửi lời xin_lỗi .")
+
+    def test_export_keeps_article_split_and_exact_token_ids(self):
+        buffer = io.StringIO()
+        tokenizer = SimpleNamespace(
+            build_inputs_with_special_tokens=lambda ids: [0] + ids + [2],
+            decode=lambda ids, **kwargs: " ".join(map(str, ids)),
+        )
+        articles = [{"article_id": 5, "text": "A", "label": 1},
+                    {"article_id": 8, "text": "B", "label": 0}]
+        chunks = [[([4, 5, 6, 7], 4), ([6, 7, 8], 1)], [([9], 1)]]
+        with patch.object(Path, "mkdir"), patch.object(Path, "open") as opener, patch(
+            "phobert_pipeline.export_chunks.tokenize_chunks", side_effect=chunks,
+        ):
+            opener.return_value.__enter__.return_value = buffer
+            count = export_chunks(articles, [0], tokenizer, 6, 2, Path("chunks.csv"))
+        rows = list(csv.DictReader(io.StringIO(buffer.getvalue())))
+        self.assertEqual(count, 3)
+        self.assertEqual([row["split"] for row in rows], ["train", "train", "test"])
+        self.assertEqual([row["start_token"] for row in rows], ["0", "2", "0"])
+        self.assertEqual([row["end_token"] for row in rows], ["4", "5", "1"])
+        self.assertEqual([json.loads(row["input_ids"]) for row in rows],
+                         [[0, 4, 5, 6, 7, 2], [0, 6, 7, 8, 2], [0, 9, 2]])
+
     def test_weighted_article_vector(self):
         import numpy as np
 

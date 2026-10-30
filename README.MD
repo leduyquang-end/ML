@@ -1,193 +1,197 @@
-# Hướng dẫn: PhoBERT chunking + Logistic Regression/SVM
+# Trích đặc trưng tin tức tiếng Việt bằng PhoBERT
 
-## 1. Mục tiêu
+## 1. Mục tiêu và trạng thái
 
-Dùng PhoBERT pretrained để biến mỗi bài báo thành vector đặc trưng, sau đó huấn luyện hai bộ phân loại:
+Dự án đọc dữ liệu tin tức, tiền xử lý, chia bài dài thành các chunk và dùng
+`vinai/phobert-base` đã đóng băng để tạo **một vector cho mỗi bài báo**.
 
-1. PhoBERT + Logistic Regression
-2. PhoBERT + SVM
-
-Nhãn: `0 = Real`, `1 = Fake`. Mỗi bài tạo đúng một vector, dù có một hay nhiều chunk.
-
-## 2. Quy trình
+Đã triển khai đến bước trích đặc trưng. **Chưa huấn luyện Logistic Regression
+hoặc SVM**, chưa có kết quả đánh giá phân loại. Nhãn trong các file đầu ra là
+nhãn gốc của dữ liệu: `0 = Real`, `1 = Fake`.
 
 ```text
-Bài báo → làm sạch nhẹ/tách từ → tokenizer PhoBERT → chia chunk có overlap
-         → PhoBERT đóng băng tạo vector chunk → gộp thành vector bài
-         → Logistic Regression và SVM → đánh giá cùng tập test
+CSV → làm sạch, bỏ trùng → chia train/test theo bài → PyVi → tokenize/chunk
+    → PhoBERT → vector chunk → gộp có trọng số → vector bài
 ```
 
-## 3. Chuẩn bị dữ liệu
+Có hai chế độ chạy: chỉ xuất dữ liệu sau chunk, hoặc chạy đầy đủ để xuất vector.
 
-CSV cần có `text` và `label`. Xác nhận nhãn chỉ gồm 0 và 1; bỏ dòng thiếu/rỗng; chuẩn hóa khoảng trắng; loại văn bản trùng hoàn toàn trước khi chia tập. Ghi lại số dòng đã loại và phân bố nhãn.
-
-Giữ dấu tiếng Việt, từ phủ định, tên riêng, số và dấu câu. Không bỏ stopwords, không xóa dấu, không chuyển thành không dấu. Nếu ô chứa cả tiêu đề và thân bài, giữ cả hai.
-
-PhoBERT phù hợp với văn bản tiếng Việt đã tách từ. Dùng cùng một bộ tách từ như `pyvi.ViTokenizer` trong huấn luyện và dự đoán:
+## 2. Cấu trúc thư mục
 
 ```text
-Trước: Thủ tướng Abe gửi lời xin lỗi.
-Sau:   Thủ_tướng Abe gửi lời xin_lỗi .
+data/vn_news_226_tlfr.csv       # Dữ liệu đầu vào
+phobert_features.py            # Điểm chạy chính, nhận tham số dòng lệnh
+phobert_pipeline/
+    config.py                 # Checkpoint, đường dẫn và cache
+    preprocessing.py          # Đọc CSV, làm sạch, bỏ trùng, tách từ
+    splitting.py              # Chia train/test theo bài
+    chunking.py               # Tokenize, giới hạn độ dài, chia cửa sổ overlap
+    encoder.py                # Nạp PhoBERT đóng băng, tạo vector chunk
+    aggregation.py            # Gộp vector chunk thành vector bài
+    pipeline.py               # Điều phối các bước trích đặc trưng
+    export_chunks.py          # Xuất dữ liệu sau chunk thành CSV
+    outputs.py                # Lưu vector, nhãn, split và encoder
+outputs/                      # Dữ liệu sinh ra khi chạy, không đưa lên Git
+.cache/                       # Cache mô hình và file tạm, không đưa lên Git
+run.ps1                       # Chạy trên Windows bằng .venv của dự án
+Dockerfile / compose.yaml     # Môi trường chạy CPU để chia sẻ
 ```
 
-## 4. Chia dữ liệu để tránh rò rỉ
+## 3. Tiền xử lý dữ liệu
 
-Chia dữ liệu theo **bài báo**, trước khi tạo chunk. Không chia chunk của cùng bài vào nhiều tập. Có thể giữ 15–20% làm test phân tầng theo nhãn và dùng cross-validation phân tầng trên phần còn lại để chọn cấu hình. Test chỉ dùng đánh giá cuối. Nếu xác định được bài gần trùng/cùng sự kiện, gom nhóm và giữ mỗi nhóm trong cùng fold/tập.
+CSV cần có hai cột `text` và `label`. Chương trình:
 
-Đặt seed cố định và lưu các chỉ số bài thuộc mỗi split để tái lập kết quả.
+- Chuẩn hóa Unicode NFC và khoảng trắng; giữ cả tiêu đề lẫn thân bài.
+- Bỏ bản ghi thiếu văn bản/nhãn; chỉ chấp nhận nhãn `0` hoặc `1`.
+- Bỏ văn bản trùng sau chuẩn hóa; báo lỗi nếu bài trùng nhưng khác nhãn.
+- Giữ dấu tiếng Việt, chữ hoa, số, dấu câu và từ phủ định; không bỏ stopwords.
+- Tách từ bằng `pyvi.ViTokenizer` trước khi tokenize cho PhoBERT.
+
+Dữ liệu hiện tại: **226 bài → bỏ 1 bài trùng → 225 bài**, gồm 123 Real và 102 Fake.
+`article_id` là chỉ số bản ghi CSV ban đầu, tính từ 0; sau khi bỏ trùng ID có thể bị khuyết.
+
+## 4. Chia train/test
+
+Mặc định chia **80% train / 20% test**, phân tầng theo nhãn, `seed = 42`.
+Với dữ liệu hiện tại: **180 bài train và 45 bài test**.
+
+Chia theo bài **trước khi tạo chunk**. Tất cả chunk của cùng một bài thuộc cùng
+một tập, tránh việc mô hình học một phần bài rồi được kiểm tra trên phần khác
+của chính bài đó. Cùng dữ liệu, tham số và thứ tự bài sẽ tạo cùng một split.
+
+PhoBERT đóng băng trích vector cho cả hai tập. Khi bổ sung bộ phân loại,
+chỉ dùng train để học/chọn cấu hình; dành test cho đánh giá cuối.
 
 ## 5. Tokenize và chia chunk
 
-### 5.1 Giới hạn đầu vào
+Tokenize toàn bài với `truncation=False`, sau đó dùng cửa sổ trượt có overlap.
+Độ dài được tính bằng tokenizer của checkpoint, không suy từ số ký tự.
 
-Không suy số token từ số ký tự hay số từ ngăn bằng khoảng trắng. Đếm bằng tokenizer của đúng checkpoint PhoBERT.
+| Tham số mặc định với PhoBERT base | Giá trị |
+| --- | --- |
+| Tổng token mỗi chunk, gồm token đặc biệt | Tối đa 256 |
+| Token nội dung mỗi chunk | Tối đa 254 |
+| Token đặc biệt | `<s>` và `</s>` |
+| Overlap | 32 token nội dung |
+| Bước dịch cửa sổ | 254 − 32 = 222 token |
 
-Kiểm tra giới hạn từ cấu hình model, ví dụ `model.config.max_position_embeddings`, và tokenizer. Một số tokenizer khai báo `model_max_length` rất lớn như giá trị mặc định; cần đối chiếu với cấu hình model. PhoBERT base thường có giới hạn 256 vị trí, nhưng phải xác nhận checkpoint đang dùng.
+Giới hạn được đối chiếu với bảng vị trí/config và tokenizer. Token đặc biệt
+được thêm riêng sau khi chia chunk. Không bỏ phần đuôi bài dài.
+Cấu hình mặc định hiện tạo **621 chunk từ 225 bài**.
 
-Gọi giới hạn tổng là `L`, đã tính token đặc biệt. Nếu tokenizer thêm `S` token đặc biệt thì phần nội dung tối đa là `W = L - S`. Ví dụ `L=256`, `S=2` thì `W=254`. Tokenizer tự thêm token đầu/cuối cho mỗi chunk; đừng chia đủ 256 token nội dung rồi cộng thêm token đặc biệt.
+## 6. Đưa dữ liệu qua PhoBERT
 
-### 5.2 Cửa sổ trượt có overlap
+Encoder dùng `requires_grad_(False)`, `eval()` và `torch.no_grad()`;
+không cập nhật trọng số và không fine-tune.
 
-Đặt `W` là số token nội dung tối đa mỗi chunk, `O` là số token overlap (khởi đầu có thể thử 32), và `stride = W - O`.
+Mỗi chunk cho hidden state của từng token. Masked mean pooling lấy trung bình
+các token nội dung, loại padding và token đặc biệt, tạo một vector chunk.
+Số chiều đọc từ cấu hình checkpoint; PhoBERT base có **768 chiều**.
 
-Minh họa với `W=10`, `O=2`:
+## 7. Gộp thành vector bài
 
 ```text
-Token toàn bài:  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
-Chunk 1:         1  2  3  4  5  6  7  8  9 10
-Chunk 2:                           9 10 11 12 13 14 15
+vector_bài = tổng(trọng_số_chunk × vector_chunk) / tổng(trọng_số_chunk)
 ```
 
-Hai token cuối chunk 1 xuất hiện lại ở đầu chunk 2. Phần lặp giữ một chút ngữ cảnh quanh ranh giới. Với `W=254`, `O=32`, mỗi chunk kế tiếp bắt đầu sau `254-32=222` token mới.
+Trọng số là số token mới: chunk đầu tính toàn bộ nội dung, chunk sau trừ phần
+overlap. Mỗi bài cuối cùng có đúng một vector, dù gồm một hay nhiều chunk.
 
-Pseudocode chia token nội dung:
+Đây là baseline: phần overlap vẫn góp ngữ cảnh trong vector chunk;
+trọng số không loại trùng chính xác từng vector token và phép gộp không giữ thứ tự đoạn.
+
+## 8. Các file đầu ra dùng để làm gì?
+
+| File | Nội dung | Kết quả hiện tại |
+| --- | --- | --- |
+| `outputs/phobert/articles.csv` | Văn bản đã làm sạch/bỏ trùng, chưa tách từ/chunk; gồm ID và nhãn gốc | 225 bài |
+| `outputs/chunks.csv` | Mỗi dòng là một chunk trước encoder: ID bài, split, nhãn, ID chunk, vị trí token, văn bản tách từ và `input_ids` dạng JSON | 621 chunk |
+| `outputs/phobert/embeddings.csv` | Mỗi dòng là vector bài sau PhoBERT và gộp chunk; gồm ID, split, nhãn, số chunk, `feature_0`…`feature_767` | 225 × 768 đặc trưng |
+| `outputs/phobert/features.npz` | Cùng vector/nhãn ở dạng NumPy, tách sẵn train/test | Train `(180, 768)`, test `(45, 768)` |
+| `outputs/phobert/metadata.json` | Checkpoint/revision, seed, cấu hình chunk, thống kê và ID từng split | Dùng đối chiếu, tái lập |
+| `outputs/phobert/encoder/` | Encoder và tokenizer được lưu lại | Dùng trích vector sau này |
+
+`chunks.csv` được tạo bằng lệnh xuất chunk riêng. Các file trong
+`outputs/phobert/` được tạo khi chạy đầy đủ. CSV dùng UTF-8 BOM để mở bằng Excel.
+`embeddings.csv` chưa qua scaler và không chứa nhãn dự đoán hay xác suất phân loại.
+
+Đọc dữ liệu cho bước học máy tiếp theo:
 
 ```python
-def make_chunks(content_ids, window_size, overlap):
-    stride = window_size - overlap
-    chunks = []
-    start = 0
-    while start < len(content_ids):
-        chunks.append(content_ids[start : start + window_size])
-        if start + window_size >= len(content_ids):
-            break
-        start += stride
-    return chunks
+import numpy as np
+
+with np.load("outputs/phobert/features.npz", allow_pickle=False) as data:
+    X_train, y_train = data["X_train"], data["y_train"]
+    X_test, y_test = data["X_test"], data["y_test"]
 ```
 
-Tokenize toàn văn bản với `truncation=False`; chia chuỗi token nội dung; sau đó thêm token đặc biệt riêng cho từng chunk bằng API tokenizer, chẳng hạn `prepare_for_model(..., add_special_tokens=True)`. Kiểm tra độ dài cuối cùng mỗi chunk không vượt `L`. Nếu văn bản ngắn hơn `W`, chỉ tạo một chunk.
+NPZ còn có `train_ids`, `test_ids`, `train_chunk_counts`, `test_chunk_counts`.
+Dùng `article_id` để đối chiếu một bài giữa các file, không dùng số dòng CSV.
 
-## 6. Tạo vector cho mỗi chunk
+## 9. Chạy bằng Python trên Windows
 
-Nạp PhoBERT pretrained làm encoder và đóng băng trọng số:
+Dùng Python 3.13 như môi trường đã kiểm tra. Mở terminal tại thư mục dự án trên ổ E:
 
-```python
-for parameter in encoder.parameters():
-    parameter.requires_grad = False
-encoder.eval()
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --cache-dir .cache/pip -r requirements.txt
+
+# Chỉ kiểm tra dữ liệu, không tải mô hình
+.\run.ps1 --check-data
+
+# Tiền xử lý và xuất chunk; chỉ tải tokenizer/config
+.\run.ps1 --export-chunks outputs/chunks.csv
+
+# Chạy PhoBERT và xuất vector bài
+.\run.ps1
 ```
 
-Đưa từng chunk qua encoder trong `torch.no_grad()`. PhoBERT trả hidden state cho mỗi token. Dùng masked mean pooling để lấy trung bình vector của token nội dung hợp lệ; loại padding và nên loại token đặc biệt khỏi phép trung bình.
+Có thể điều chỉnh tham số:
 
-Kích thước vector bằng chiều ẩn của checkpoint (thường 768 với base). Đọc từ cấu hình model thay vì hard-code.
-
-```text
-Chunk 1 → PhoBERT → vector chunk 1
-Chunk 2 → PhoBERT → vector chunk 2
-Chunk 3 → PhoBERT → vector chunk 3
+```powershell
+.\run.ps1 --batch-size 4 --overlap 32 --test-size 0.2 --seed 42
 ```
 
-## 7. Gộp vector chunk thành vector bài
+Lần đầu cần Internet để tải tokenizer và trọng số. Chương trình dùng CUDA nếu
+PyTorch đang cài hỗ trợ GPU, nếu không dùng CPU. `.venv`, cache mô hình,
+file tạm và đầu ra được đặt trong dự án; `run.ps1` đặt TEMP/TMP trước khi chạy Python.
+PyVi trên Windows nạp CRF vào RAM để hỗ trợ đường dẫn có dấu.
 
-Mỗi bài có thể có nhiều vector chunk. Gộp chúng thành một vector đại diện bài, ví dụ trung bình có trọng số:
+## 10. Chạy và chia sẻ bằng Docker
 
-```text
-vector_bài = Σ(trọng_số_i × vector_chunk_i) / Σ(trọng_số_i)
+```powershell
+docker compose build
+docker compose run --rm phobert --check-data
+docker compose run --rm phobert --export-chunks outputs/chunks.csv
+docker compose run --rm phobert
 ```
 
-Với overlap, trọng số nên phản ánh số token **mới** mà chunk đóng góp để phần lặp không bị tính hai lần. Quy tắc khởi đầu: chunk đầu tính toàn bộ token; chunk kế tiếp tính số token sau vùng overlap; chunk cuối tính số token nội dung thực có.
+Image chạy bằng CPU. Compose gắn `data/` chỉ đọc và lưu `outputs/`, `.cache/`
+về thư mục dự án trên máy chủ. Lần đầu vẫn cần Internet để tải checkpoint.
+Docker Desktop quản lý nơi lưu image/máy ảo riêng; bind mount không đổi vị trí đó.
 
-Trung bình vector chunk không giữ thứ tự các đoạn, nhưng đơn giản, tái lập được và phù hợp làm baseline. Kết quả là một vector cho mỗi bài, không phải một vector cho mỗi chunk.
+Xem [RUN.md](RUN.md) để xuất/nhập image và cấu hình lưu trữ trên Windows.
+Cấu hình Docker đã được kiểm tra tĩnh; chưa build/chạy thử trong môi trường hiện tại.
 
-## 8. Huấn luyện Logistic Regression và SVM
+## 11. Kiểm tra
 
-Tạo ma trận `X_train` gồm vector bài và `y_train` gồm nhãn tương ứng. Mỗi dòng là một bài báo. Hai bộ phân loại dùng cùng vector, nhãn và folds.
-
-Chuẩn hóa vector nếu cần. `StandardScaler` phải chỉ fit trên phần train của từng fold, sau đó transform validation/test. Đặt scaler trong sklearn Pipeline để tránh leakage:
-
-```python
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LogisticRegression
-from sklearn.svm import SVC
-
-logreg = make_pipeline(
-    StandardScaler(),
-    LogisticRegression(max_iter=2000, class_weight="balanced"),
-)
-svm = make_pipeline(
-    StandardScaler(),
-    SVC(kernel="linear", class_weight="balanced"),
-)
+```powershell
+.\.venv\Scripts\python.exe -B -m unittest -v test_phobert_features
 ```
 
-Các giá trị trên là điểm bắt đầu. Chọn `C` và các tham số khác bằng validation/cross-validation, không dựa trên test. `class_weight="balanced"` cũng cần được kiểm chứng, không mặc định sẽ tốt hơn.
+Hiện có **11 kiểm thử**, gồm làm sạch/nhãn, coverage và trọng số chunk, giới hạn
+vị trí, chia tập, PyVi trên đường dẫn tiếng Việt và dữ liệu xuất CSV.
+Nếu đã cài Pyright: `.\.venv\Scripts\python.exe -m pyright`.
 
-## 9. Đánh giá
+Lượt chạy dữ liệu thật đã xác nhận 225 vector × 768 chiều, không NaN/Inf;
+vector và nhãn trong CSV khớp NPZ, cùng 621 chunk và split 180/45.
+Các số này kiểm tra luồng dữ liệu, không phải chất lượng phân loại tin giả.
 
-Đánh giá cả hai mô hình trên đúng cùng các bài test. Báo cáo:
+## 12. Hướng phát triển
 
-- Macro-F1 làm chỉ số chính.
-- Precision, Recall, F1 riêng cho Real và Fake.
-- Accuracy.
-- Confusion matrix theo thứ tự `[Real (0), Fake (1)]`.
-- Macro-F1 trung bình và độ lệch chuẩn qua các fold.
-- Số chunk mỗi bài và tỷ lệ bài phải chia thành nhiều chunk.
+Bước tiếp theo là Logistic Regression và SVM dùng chung vector/split.
+Nếu chuẩn hóa vector, đặt scaler trong từng fold train để tránh leakage;
+chọn cấu hình bằng cross-validation và chỉ đánh giá test sau cùng.
+Dữ liệu hiện ít; mới loại trùng sau chuẩn hóa, chưa tự gom bài gần trùng/cùng sự kiện.
 
-Chọn cấu hình bằng cross-validation trên phần phát triển; fit lại trên toàn phần phát triển; dùng test độc lập một lần cuối.
-
-## 10. Các cấu hình chunking nên so sánh
-
-Giữ split và classifier giống nhau, so sánh:
-
-1. Chỉ dùng 256 token đầu.
-2. Sliding window không overlap.
-3. Sliding window overlap 32 token.
-
-Đây là cấu hình thí nghiệm ban đầu, không phải đáp án tối ưu đã biết trước. Chọn theo Macro-F1 cross-validation rồi mới đánh giá test. Với khoảng 225 văn bản duy nhất, cần diễn giải điểm số thận trọng.
-
-## 11. Checklist
-
-- [ ] Xác nhận nhãn `0=Real`, `1=Fake`.
-- [ ] Bỏ mẫu rỗng và bản trùng trước khi chia.
-- [ ] Chia theo bài, không theo chunk.
-- [ ] Dùng cùng preprocessing/tokenizer/checkpoint ở mọi split.
-- [ ] Xác nhận giới hạn token thực tế của checkpoint.
-- [ ] Chia token nội dung trước; mỗi chunk sau khi thêm token đặc biệt vẫn trong giới hạn.
-- [ ] Đóng băng PhoBERT khi trích vector.
-- [ ] Gộp chunk để mỗi bài có một vector.
-- [ ] Fit scaler và classifier chỉ trên train từng fold.
-- [ ] So sánh hai classifier trên cùng folds.
-- [ ] Lưu model, tokenizer, scaler, cấu hình chunking, seed và split.
-
-## 12. Giới hạn của phương pháp
-
-Chunking cho phép xử lý nhiều phần hơn của bài dài, nhưng không giải quyết được dữ liệu ít, nhãn nhiễu, trùng gần đúng hoặc khác biệt nguồn tin. PhoBERT đóng băng cũng không được điều chỉnh riêng cho nhãn Fake/Real. Đây là baseline có kiểm soát; fine-tuning có thể thử riêng nhưng dễ overfit với 226 mẫu.
-
-## 13. Cấu trúc code hiện tại
-
-Code đã triển khai đến mục 7, chưa viết hai bộ phân loại ở mục 8.
-Chạy `run.ps1` tại thư mục dự án trên ổ E; hướng dẫn chi tiết ở `RUN.md`.
-
-```text
-phobert_features.py              # Điểm chạy chính
-phobert_pipeline/
-    config.py                    # Đường dẫn, checkpoint, cache trong dự án
-    preprocessing.py             # Mục 3: đọc/làm sạch/tách từ
-    splitting.py                 # Mục 4: chia theo bài
-    chunking.py                  # Mục 5: giới hạn token, chia chunk
-    encoder.py                   # Mục 6: PhoBERT, vector chunk
-    aggregation.py               # Mục 7: gộp thành vector bài
-    pipeline.py                  # Ghép các bước trích đặc trưng
-    outputs.py                   # Lưu vector, nhãn, split và cấu hình
-```
+Tham khảo: [PhoBERT — VinAI Research](https://github.com/VinAIResearch/PhoBERT).

@@ -6,6 +6,23 @@ import json
 from .config import CHECKPOINT
 
 
+def save_embeddings_csv(path, articles, features, counts, train):
+    """Xuất vector bài để review: mỗi hàng là một bài, mỗi feature là một số thực."""
+    train_indices = set(train)
+    # Đọc số chiều thực tế, không hard-code 768 để tránh lệch checkpoint.
+    columns = ["article_id", "split", "label", "chunk_count"]
+    columns += [f"feature_{i}" for i in range(features.shape[1])]
+    with path.open("w", encoding="utf-8-sig", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow(columns)
+        for index, (article, vector, count) in enumerate(zip(articles, features, counts, strict=True)):
+            # Vector được gộp từ các chunk bằng trọng số số token mới như README mục 7.
+            writer.writerow([
+                article["article_id"], "train" if index in train_indices else "test",
+                article["label"], int(count), *vector.tolist(),
+            ])
+
+
 def save_outputs(args, articles, stats, features, counts, limit, train, test, encoder, tokenizer):
     """Lưu vector, ID split và cấu hình để bước phân loại dùng lại đúng dữ liệu."""
     import numpy as np
@@ -21,6 +38,7 @@ def save_outputs(args, articles, stats, features, counts, limit, train, test, en
             f"{name}_ids": article_ids[indices], f"{name}_chunk_counts": counts[indices],
         })
     np.savez_compressed(args.output / "features.npz", **arrays)
+    save_embeddings_csv(args.output / "embeddings.csv", articles, features, counts, train)
     metadata = {
         "checkpoint": CHECKPOINT, "revision": encoder.config._commit_hash,
         "seed": args.seed, "test_size": args.test_size, "overlap": args.overlap,

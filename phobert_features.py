@@ -23,6 +23,7 @@ def main():
     parser.add_argument("--overlap", type=int, default=32)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--check-data", action="store_true")
+    parser.add_argument("--export-chunks", type=Path, metavar="CSV", help="Xuất dữ liệu sau chunk rồi dừng, không chạy encoder.")
     args = parser.parse_args()
     articles, stats = load_articles(args.data)
     print(json.dumps(stats, ensure_ascii=False, indent=2))
@@ -33,6 +34,13 @@ def main():
 
     # Mục 4: chia theo bài trước khi tạo chunk để tránh rò rỉ train/test.
     train, test = split_articles(articles, args.test_size, args.seed)
+    if args.export_chunks:
+        from phobert_pipeline.export_chunks import export_chunks, load_chunk_tokenizer
+
+        tokenizer, limit = load_chunk_tokenizer()
+        count = export_chunks(articles, train, tokenizer, limit, args.overlap, args.export_chunks)
+        print(f"Đã xuất {count} chunk từ {len(articles)} bài: {args.export_chunks.resolve()}")
+        return
     encoder, tokenizer, device = load_encoder(args.seed)
     print(f"Trích vector bằng {device}; train={len(train)}, test={len(test)}", flush=True)
     features, counts, limit = encode_articles(

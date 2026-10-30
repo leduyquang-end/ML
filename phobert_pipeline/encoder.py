@@ -12,7 +12,10 @@ def load_encoder(seed: int):
     torch.manual_seed(seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     tokenizer = AutoTokenizer.from_pretrained(CHECKPOINT, cache_dir=MODEL_CACHE, use_fast=False)
-    encoder = AutoModel.from_pretrained(CHECKPOINT, cache_dir=MODEL_CACHE).to(device)
+    # Checkpoint có trọng số PyTorch; tránh tác vụ tự chuyển đổi safetensors nền.
+    encoder = AutoModel.from_pretrained(
+        CHECKPOINT, cache_dir=MODEL_CACHE, use_safetensors=False,
+    ).to(device)
     encoder.requires_grad_(False)
     encoder.eval()
     return encoder, tokenizer, device

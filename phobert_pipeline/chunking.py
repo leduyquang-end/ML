@@ -40,6 +40,11 @@ def input_limit(encoder, tokenizer):
     """Lấy giới hạn tổng, bao gồm cả token đặc biệt, của checkpoint đang nạp."""
     # RoBERTa đánh số vị trí từ padding_idx + 1: 258 - 1 - 1 = 256.
     positions = encoder.embeddings.position_embeddings
-    limit = positions.num_embeddings - positions.padding_idx - 1
+    return position_limit(positions.num_embeddings, positions.padding_idx, tokenizer)
+
+
+def position_limit(max_positions: int, padding_idx: int, tokenizer) -> int:
+    """Dùng chung cho encoder đầy đủ và config khi chỉ cần xuất chunk."""
+    limit = max_positions - padding_idx - 1
     # Tokenizer có thể khai báo số cực lớn; giới hạn bảng vị trí vẫn được áp dụng.
     return min(limit, tokenizer.model_max_length)

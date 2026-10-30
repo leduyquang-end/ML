@@ -20,6 +20,7 @@ chương trình đặt thêm các cache mô hình trước khi import thư việ
 | `preprocessing.py` | Mục 3: đọc CSV, làm sạch, kiểm tra nhãn, bỏ trùng, tách từ |
 | `splitting.py` | Mục 4: chia train/test theo bài |
 | `chunking.py` | Mục 5: giới hạn token và cửa sổ overlap |
+| `export_chunks.py` | Xuất dữ liệu sau chunk thành CSV, không chạy encoder |
 | `encoder.py` | Mục 6: nạp/đóng băng PhoBERT, vector từng chunk |
 | `aggregation.py` | Mục 7: gộp vector chunk theo số token mới |
 | `pipeline.py` | Ghép các bước để trích vector toàn bộ bài |
@@ -50,16 +51,38 @@ nếu có, nếu không dùng CPU. Trọng số encoder được đóng băng, k
 | File | Nội dung |
 | --- | --- |
 | `features.npz` | `X_train`, `y_train`, `X_test`, `y_test`, ID và số chunk tương ứng |
+| `embeddings.csv` | Dữ liệu sau PhoBERT: ID bài, split, nhãn, số chunk và các cột `feature_0`…`feature_767` với checkpoint base |
 | `metadata.json` | Cấu hình, revision, seed, ID từng split và thống kê dữ liệu/chunk |
 | `articles.csv` | Văn bản sạch, nhãn và ID bản ghi CSV gốc (đánh số từ 0) |
 | `encoder/` | PhoBERT và tokenizer dùng để trích vector |
 
 Mỗi hàng `X` là một bài; số cột bằng `encoder.config.hidden_size` (base: 768).
+Chạy `.\run.ps1` để tạo cả `embeddings.csv` và `features.npz`.
+CSV chứa vector bài sau masked mean pooling và gộp các chunk, chưa qua scaler
+hoặc hai bộ phân loại. Vector theo từng token không được ghi ra file này.
 Nhãn `0 = Real`, `1 = Fake`. Chưa chuẩn hóa vector, huấn luyện hay đánh giá
 Logistic Regression/SVM. Khi triển khai tiếp, fit scaler trong từng fold train.
 Chưa phát hiện tự động bài gần trùng/cùng sự kiện; cần rà soát riêng nếu có.
 
 Tham khảo: [hướng dẫn PhoBERT chính thức](https://github.com/VinAIResearch/PhoBERT).
+
+## Xuất dữ liệu sau chunk
+
+Xuất riêng dữ liệu sau tiền xử lý và chia chunk (không tải/chạy encoder):
+
+```powershell
+.\run.ps1 --export-chunks outputs/chunks.csv
+```
+
+Mỗi dòng CSV là một chunk, gồm ID bài, split train/test, nhãn, ID chunk,
+vị trí token đầu/cuối (đầu tính từ 0, cuối không bao gồm), số token nội dung,
+số token mới, văn bản chunk đã tách từ và `input_ids` dạng JSON có token đặc biệt.
+Chunk ID tính từ 0 trong từng bài. Split vẫn được chia theo bài trước khi chunk.
+Lần đầu cần Internet để tải tokenizer và config; cache lưu tại ổ E như cấu hình.
+Đây là dữ liệu đầu vào của encoder, chưa phải vector đặc trưng.
+
+Lệnh tương ứng trong Docker:
+`docker compose run --rm phobert --export-chunks outputs/chunks.csv`.
 
 ## Chia sẻ và chạy bằng Docker
 

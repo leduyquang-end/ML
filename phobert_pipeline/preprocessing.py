@@ -1,6 +1,7 @@
 """README mục 3: đọc, làm sạch, kiểm tra nhãn và tách từ tiếng Việt."""
 
 import csv
+import os
 import unicodedata
 from collections import Counter
 from pathlib import Path
@@ -25,6 +26,17 @@ def segment_text(text: str) -> str:
     """Dùng chung PyVi cho bước trích đặc trưng và dự đoán sau này."""
     from pyvi import ViTokenizer
 
+    # CRFsuite trên Windows không mở được tên file chứa dấu (ví dụ "học máy").
+    # Python đọc được file này: nạp bytes vào RAM một lần, không đổi cache sang ổ C.
+    model = ViTokenizer.ViTokenizer.model
+    if os.name == "nt" and model._tagger is None:
+        import pycrfsuite
+
+        # CRFsuite giữ con trỏ đến bytes, nên phải giữ buffer cùng vòng đời model.
+        model._phobert_crf_bytes = Path(model.modelfile.name).read_bytes()
+        tagger = getattr(pycrfsuite, "Tagger")()
+        tagger.open_inmemory(model._phobert_crf_bytes)
+        model._tagger = tagger
     return ViTokenizer.tokenize(text)
 
 
